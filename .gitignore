@@ -1,0 +1,19 @@
+# Python
+__pycache__/
+*.py[cod]
+*.egg-info/
+dist/
+
+# 虚拟环境
+venv/
+.venv/
+
+# 密钥（包含真实 API Key）
+.env
+
+# 数据（chromadb 持久化等）
+data/
+
+# IDE
+.vscode/
+.idea/
