@@ -13,9 +13,12 @@ from src.core.vector_memory import VectorMemory
 from src.tools.calculator import calculator
 from src.tools.file_ops import read_file, write_file, list_directory
 from src.tools.web_search import web_search
+from src.tools.web_fetch import web_fetch
+from src.tools.shell import run_shell
+from src.tools.system_info import get_current_time, get_environment
 
 
-def create_agent() -> Agent:
+def create_agent(vm=None) -> Agent:
     llm = LLM()
     registry = ToolRegistry()
 
@@ -81,23 +84,65 @@ def create_agent() -> Agent:
         function=web_search
     ))
 
-    return Agent(llm=llm, tool_registry=registry)
+    # 注册 shell 执行工具
+    registry.register(Tool(
+        name="run_shell",
+        description="执行 shell 命令并返回输出。可用于查看文件、运行脚本、查看系统信息等。禁止 sudo/rm -rf/reboot 等危险操作",
+        parameters={
+            "type": "object",
+            "properties": {
+                "command": {"type": "string", "description": "要执行的 shell 命令，如 'ls -la' 或 'cat file.txt'"}
+            },
+            "required": ["command"]
+        },
+        function=run_shell
+    ))
+
+    # 注册网页抓取工具
+    registry.register(Tool(
+        name="web_fetch",
+        description="抓取指定 URL 的网页内容，提取正文文本（去除 HTML 标签）",
+        parameters={
+            "type": "object",
+            "properties": {
+                "url": {"type": "string", "description": "要抓取的网页 URL"}
+            },
+            "required": ["url"]
+        },
+        function=web_fetch
+    ))
+
+    # 注册系统信息工具
+    registry.register(Tool(
+        name="get_current_time",
+        description="获取当前日期和时间",
+        parameters={"type": "object", "properties": {}},
+        function=get_current_time
+    ))
+    registry.register(Tool(
+        name="get_environment",
+        description="获取系统环境信息：Python 版本、操作系统、工作目录",
+        parameters={"type": "object", "properties": {}},
+        function=get_environment
+    ))
+
+    return Agent(llm=llm, tool_registry=registry, vector_memory=vm)
 
 
 def main():
     console = Console()
     console.print(Panel.fit(
-        "[bold cyan]AI Agent[/bold cyan] — ReAct 模式\n"
-        "/plan <任务>  分解任务    /run <任务>  分解并执行\n"
-        "/remember <键> <内容>  长期记忆  /recall <查询>  语义检索\n"
-        "直接输入问题  Agent 自动回答\n"
+        "[bold cyan]AI Agent[/bold cyan] — ReAct 模式 (8 工具)\n"
+        "命令: [bold blue]/plan[/bold blue] 分解  [bold blue]/run[/bold blue] 分解执行  [bold blue]/todo[/bold blue] 任务状态\n"
+        "      [bold blue]/remember[/bold blue] 长期记忆  [bold blue]/recall[/bold blue] 语义检索\n"
+        "直接输入问题  Agent 自动调用工具回答\n"
         "[bold red]退出/exit/q[/bold red] 结束 | [bold yellow]reset[/bold yellow] 清除记忆",
         title="欢迎"
     ))
 
-    agent = create_agent()
-    planner = Planner(llm=agent.llm)
     vm = VectorMemory()
+    agent = create_agent(vm=vm)
+    planner = Planner(llm=agent.llm)
 
     while True:
         try:
@@ -146,11 +191,33 @@ def main():
                 console.print(Panel(Markdown(result), title="[bold blue]Agent[/bold blue]", border_style="blue"))
                 continue
 
+            # Todo 表格
+            todo_table = Table(title=f"任务进度: {task[:30]}...", border_style="cyan")
+            todo_table.add_column("#", style="dim")
+            todo_table.add_column("步骤")
+            todo_table.add_column("状态")
+            todo_data = [(str(i), step, "⏳") for i, step in enumerate(steps, 1)]
+            for row in todo_data:
+                todo_table.add_row(*row)
+            console.print(todo_table)
+            console.print()
+
             final_parts = []
             for i, step in enumerate(steps, 1):
                 console.print(f"[dim][Step {i}/{len(steps)}][/dim] [cyan]{step}[/cyan]")
                 with console.status(f"[cyan]执行 Step {i}...[/cyan]"):
                     result = agent.run(step)
+
+                # 更新 Todo 状态
+                todo_data[i-1] = (str(i), step, "[green]✓[/green]")
+                todo_table = Table(title=f"任务进度: {task[:30]}...", border_style="cyan")
+                todo_table.add_column("#", style="dim")
+                todo_table.add_column("步骤")
+                todo_table.add_column("状态")
+                for row in todo_data:
+                    todo_table.add_row(*row)
+                console.print(todo_table)
+
                 final_parts.append(f"### Step {i}: {step}\n\n{result}")
                 console.print(Markdown(f"**结果:** {result[:200]}{'...' if len(result) > 200 else ''}"))
                 console.print()
