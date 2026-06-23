@@ -19,10 +19,17 @@ class Agent:
 
     def _default_system_prompt(self) -> str:
         return (
-            "你是一个智能助手，可以使用工具来完成任务。"
-            "当需要获取信息或执行操作时，请使用合适的工具。"
-            "当你已经完成任务时，直接给出最终答案，不要再调用工具。"
-            "如果工具返回错误，尝试换一种方式解决，不要重复相同的错误调用。"
+            "你是智能助手，可使用工具完成任务。\n\n"
+            "<rules>\n"
+            "- 已知道答案时直接回答，不要调用工具\n"
+            "- 需要最新/外部信息时用 web_search 或 web_fetch\n"
+            "- 需要文件操作时用 read_file/write_file/list_directory\n"
+            "- 需要执行命令时用 run_shell\n"
+            "- 数学计算用 calculator\n"
+            "- 工具返回错误时，分析原因后修正参数重试（最多1次）\n"
+            "- 回答简洁准确，优先用列表，避免冗长\n"
+            "- 你的知识截止 2025年5月，之后的事件请用搜索工具\n"
+            "</rules>"
         )
 
     def run(self, user_input: str, max_steps: int = 10,
@@ -53,12 +60,12 @@ class Agent:
             message = self.llm.chat_with_tools(messages, tools_openai)
 
             if message.tool_calls:
-                # 重复检测：最近 3 次调用相同则终止
+                # 重复检测：最近 2 次调用相同则终止
                 current_calls = tuple(tc.function.name for tc in message.tool_calls)
                 self._recent_tool_calls.append(current_calls)
-                if len(self._recent_tool_calls) > 3:
+                if len(self._recent_tool_calls) > 2:
                     self._recent_tool_calls.pop(0)
-                if len(self._recent_tool_calls) >= 3 and len(set(self._recent_tool_calls)) == 1:
+                if len(self._recent_tool_calls) >= 2 and len(set(self._recent_tool_calls)) == 1:
                     names = ", ".join(current_calls)
                     return f"检测到重复调用 {names}，已终止。请换一种方式重试。"
 

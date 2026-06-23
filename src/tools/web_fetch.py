@@ -25,7 +25,7 @@ class _TextExtractor(HTMLParser):
                 self.text.append(stripped)
 
 
-def web_fetch(url: str, max_chars: int = 3000) -> str:
+def web_fetch(url: str, max_chars: int = 2000) -> str:
     try:
         req = Request(url, headers={"User-Agent": "Mozilla/5.0 (compatible; Agent/1.0)"})
         with urlopen(req, timeout=15) as resp:
@@ -39,6 +39,6 @@ def web_fetch(url: str, max_chars: int = 3000) -> str:
         text = "\n".join(parser.text)
         if not text.strip():
             return "未能提取到页面文本内容"
-        return text[:max_chars] if len(text) > max_chars else text
+        return text[:max_chars] + "\n...(已截断)" if len(text) > max_chars else text
     except Exception as e:
         return f"抓取失败：{e}"

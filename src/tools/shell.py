@@ -23,7 +23,7 @@ def run_shell(command: str, timeout: int = 30) -> str:
             output += "\n[stderr]\n" + result.stderr
         if not output.strip():
             output = "(命令执行成功，无输出)"
-        return output[:5000] if len(output) > 5000 else output
+        return output[:2000] + "\n...(已截断)" if len(output) > 2000 else output
     except subprocess.TimeoutExpired:
         return f"错误：命令超时（>{timeout}秒）"
     except Exception as e:

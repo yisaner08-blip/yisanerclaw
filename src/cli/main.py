@@ -24,7 +24,7 @@ def create_agent(vm=None) -> Agent:
 
     registry.register(Tool(
         name="calculator",
-        description="计算数学表达式，支持 +-*/%^ 和 math 函数",
+        description="计算数学表达式",
         parameters={
             "type": "object",
             "properties": {
@@ -72,7 +72,7 @@ def create_agent(vm=None) -> Agent:
     ))
     registry.register(Tool(
         name="web_search",
-        description="搜索网页，返回前几条结果的标题、链接和摘要",
+        description="搜索网页，返回标题、链接和摘要",
         parameters={
             "type": "object",
             "properties": {
@@ -87,7 +87,7 @@ def create_agent(vm=None) -> Agent:
     # 注册 shell 执行工具
     registry.register(Tool(
         name="run_shell",
-        description="执行 shell 命令并返回输出。可用于查看文件、运行脚本、查看系统信息等。禁止 sudo/rm -rf/reboot 等危险操作",
+        description="执行安全的 shell 命令并返回输出",
         parameters={
             "type": "object",
             "properties": {
@@ -101,7 +101,7 @@ def create_agent(vm=None) -> Agent:
     # 注册网页抓取工具
     registry.register(Tool(
         name="web_fetch",
-        description="抓取指定 URL 的网页内容，提取正文文本（去除 HTML 标签）",
+        description="抓取网页内容，提取正文文本",
         parameters={
             "type": "object",
             "properties": {

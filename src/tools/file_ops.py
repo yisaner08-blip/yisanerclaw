@@ -21,7 +21,7 @@ def read_file(filepath: str) -> str:
             return f"错误：文件不存在: {filepath}"
         with open(path, "r", encoding="utf-8") as f:
             content = f.read()
-        return content[:5000] if len(content) > 5000 else content
+        return content[:2000] + "\n...(已截断)" if len(content) > 2000 else content
     except PermissionError as e:
         return f"错误：{e}"
     except Exception as e:
