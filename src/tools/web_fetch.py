@@ -5,27 +5,35 @@ from html.parser import HTMLParser
 
 
 class _TextExtractor(HTMLParser):
+    """HTML 文本提取器：过滤 script/style 标签，收集可见文本"""
+
     def __init__(self):
         super().__init__()
-        self.text = []
-        self.skip = False
+        self.text = []   # 收集的文本片段
+        self.skip = False  # 是否跳过当前标签内容（script/style 内）
 
     def handle_starttag(self, tag, attrs):
         if tag in ("script", "style", "noscript"):
-            self.skip = True
+            self.skip = True  # 进入跳过模式
 
     def handle_endtag(self, tag):
         if tag in ("script", "style", "noscript"):
-            self.skip = False
+            self.skip = False  # 退出跳过模式
 
     def handle_data(self, data):
-        if not self.skip:
-            stripped = data.strip()
-            if stripped:
-                self.text.append(stripped)
+        if not self.skip and (stripped := data.strip()):
+            self.text.append(stripped)
 
 
 def web_fetch(url: str, max_chars: int = 2000) -> str:
+    """抓取网页内容并提取纯文本
+
+    Args:
+        url: 网页 URL
+        max_chars: 最大返回字符数，默认 2000
+    Returns:
+        提取的文本内容或错误信息
+    """
     try:
         req = Request(url, headers={"User-Agent": "Mozilla/5.0 (compatible; Agent/1.0)"})
         with urlopen(req, timeout=15) as resp:
@@ -36,9 +44,7 @@ def web_fetch(url: str, max_chars: int = 2000) -> str:
 
         parser = _TextExtractor()
         parser.feed(html)
-        text = "\n".join(parser.text)
-        if not text.strip():
-            return "未能提取到页面文本内容"
+        text = "\n".join(parser.text).strip() or "未能提取到页面文本内容"
         return text[:max_chars] + "\n...(已截断)" if len(text) > max_chars else text
     except Exception as e:
         return f"抓取失败：{e}"

@@ -7,17 +7,28 @@ from src.core.memory import ConversationMemory
 
 
 class Agent:
+    """ReAct Agent：思考 -> 行动 -> 观察 循环"""
+
     def __init__(self, llm: LLM, tool_registry: ToolRegistry,
                  system_prompt: str = None, vector_memory=None):
-        self.llm = llm
-        self.tools = tool_registry
-        self.system_prompt = system_prompt or self._default_system_prompt()
-        self.memory = ConversationMemory()
+        """初始化 Agent
+
+        Args:
+            llm: 大模型客户端
+            tool_registry: 工具注册表
+            system_prompt: 系统提示词，默认使用内置规则
+            vector_memory: 可选长期向量记忆
+        """
+        self.llm = llm  # LLM 客户端
+        self.tools = tool_registry  # 工具注册表
+        self.system_prompt = system_prompt or self._default_system_prompt()  # 系统提示词
+        self.memory = ConversationMemory()  # 短期对话记忆
         self.memory.set_system(self.system_prompt)
         self.vector_memory = vector_memory  # 可选长期记忆
-        self._recent_tool_calls: list[str] = []  # 重复检测
+        self._recent_tool_calls: list = []  # 滑动窗口记录最近调用，用于重复检测
 
     def _default_system_prompt(self) -> str:
+        """内置系统提示词：工具选择策略 + 行为约束"""
         return (
             "你是智能助手，可使用工具完成任务。\n\n"
             "<rules>\n"
@@ -34,102 +45,93 @@ class Agent:
 
     def run(self, user_input: str, max_steps: int = 10,
             auto_recall: bool = True, auto_remember: bool = False) -> str:
-        # 自动检索长期记忆
-        recalled_context = ""
-        if auto_recall and self.vector_memory:
-            try:
-                recalled = self.vector_memory.recall(user_input, n_results=2)
-                if recalled:
-                    recalled_context = "## 相关历史记忆\n"
-                    for r in recalled:
-                        recalled_context += f"- {r['content']}\n"
-            except Exception:
-                pass  # vector_memory 不可用时静默跳过
+        """执行一次 Agent 对话（ReAct 循环核心）
+
+        Args:
+            user_input: 用户输入
+            max_steps: 最大循环步数，防止死循环
+            auto_recall: 是否自动检索长期记忆
+            auto_remember: 是否自动存储对话到长期记忆
+        Returns:
+            Agent 的最终回复
+        """
+        # 自动检索长期记忆并注入上下文
+        recalled_context = self._get_recalled_context(user_input) if auto_recall and self.vector_memory else ""
 
         user_message = {"role": "user", "content": user_input}
         if recalled_context:
             user_message["content"] = f"{recalled_context}\n## 当前问题\n{user_input}"
 
-        self.memory.add_message(user_message)
-        tools_openai = self.tools.to_openai_format()
-        self._recent_tool_calls = []
-        last_tool_call = None
+        self.memory.add_message(user_message)  # 添加用户消息到记忆
+        tools_openai = self.tools.to_openai_format()  # 工具定义（每轮相同，可缓存但暂不优化）
+        self._recent_tool_calls = []  # 重置重复检测滑动窗口
 
-        for step in range(max_steps):
-            messages = self.memory.to_messages()
-            message = self.llm.chat_with_tools(messages, tools_openai)
+        for _ in range(max_steps):
+            message = self.llm.chat_with_tools(self.memory.to_messages(), tools_openai)
 
             if message.tool_calls:
-                # 重复检测：最近 2 次调用相同则终止
+                # 检测重复调用（连续 2 次相同则终止）
                 current_calls = tuple(tc.function.name for tc in message.tool_calls)
                 self._recent_tool_calls.append(current_calls)
                 if len(self._recent_tool_calls) > 2:
-                    self._recent_tool_calls.pop(0)
+                    self._recent_tool_calls.pop(0)  # 保持窗口大小 2
                 if len(self._recent_tool_calls) >= 2 and len(set(self._recent_tool_calls)) == 1:
-                    names = ", ".join(current_calls)
-                    return f"检测到重复调用 {names}，已终止。请换一种方式重试。"
+                    return f"检测到重复调用 {', '.join(current_calls)}，已终止。请换一种方式重试。"
 
+                # 记录助手消息（含 tool_calls）
                 self.memory.add_message({
-                    "role": "assistant",
-                    "content": message.content,
+                    "role": "assistant", "content": message.content,
                     "tool_calls": [
-                        {
-                            "id": tc.id, "type": "function",
-                            "function": {
-                                "name": tc.function.name,
-                                "arguments": tc.function.arguments,
-                            }
-                        }
+                        {"id": tc.id, "type": "function", "function": {
+                            "name": tc.function.name, "arguments": tc.function.arguments,
+                        }}
                         for tc in message.tool_calls
                     ]
                 })
 
+                # 执行每个工具调用并记录结果
                 for tc in message.tool_calls:
-                    tool_name = tc.function.name
-                    tool_args = json.loads(tc.function.arguments)
-                    result = self.tools.execute(tool_name, tool_args)
-                    last_tool_call = (tool_name, tool_args, result)
-                    self.memory.add_message({
-                        "role": "tool",
-                        "tool_call_id": tc.id,
-                        "content": result,
-                    })
+                    result = self.tools.execute(tc.function.name, json.loads(tc.function.arguments))
+                    self.memory.add_message({"role": "tool", "tool_call_id": tc.id, "content": result})
             else:
+                # LLM 返回文本 → 对话结束
                 self.memory.add_message({"role": "assistant", "content": message.content})
-
-                # 自动记住重要信息
                 final_answer = message.content or ""
+
+                # 可选自动存储到长期记忆
                 if auto_remember and self.vector_memory and final_answer:
                     try:
                         self.vector_memory.remember(
-                            f"conv_{id(self)}_{hash(user_input) & 0x7FFFFFFF:08x}",
+                            f"conv_{abs(hash(user_input)):08x}",
                             f"Q: {user_input}\nA: {final_answer[:300]}"
                         )
                     except Exception:
                         pass
-
                 return final_answer
 
         return "Agent 执行超过最大步数，任务中断。"
 
+    def _get_recalled_context(self, query: str) -> str:
+        """检索长期记忆并格式化为上下文文本"""
+        try:
+            recalled = self.vector_memory.recall(query, n_results=2)
+            return "\n".join([f"- {r['content']}" for r in recalled]) if recalled else ""
+        except Exception:
+            return ""  # 向量记忆不可用时静默跳过
+
     def reset_memory(self):
-        """清除对话记忆，开始新对话"""
+        """清除短期对话记忆"""
         self.memory.reset()
         self._recent_tool_calls = []
 
     def run_planned(self, task: str, planner, verbose: bool = False) -> str:
         """拆解任务 → 逐步执行 → 汇总结果"""
         steps = planner.decompose(task)
-        if not steps:
-            return self.run(task)
+        if len(steps) <= 1:
+            return self.run(task)  # 单步或分解失败直接执行
 
-        results = []
-        for i, step in enumerate(steps, 1):
-            if verbose:
-                print(f"\n[Step {i}/{len(steps)}] {step}")
-            result = self.run(step)
-            results.append(f"Step {i}: {step}\n结果: {result}")
-
-        if len(results) == 1:
-            return results[0]
+        results = [
+            f"Step {i}: {step}\n结果: {self.run(step)}"
+            for i, step in enumerate(steps, 1)
+        ]
         return "任务执行完毕：\n\n" + "\n\n".join(results)

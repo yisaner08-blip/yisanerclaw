@@ -4,20 +4,22 @@ from ddgs import DDGS
 
 
 def web_search(query: str, max_results: int = 5) -> str:
+    """搜索网页并返回格式化的结果（标题+链接+摘要）
+
+    Args:
+        query: 搜索关键词
+        max_results: 最多返回结果数，默认 5
+    Returns:
+        格式化的搜索结果或错误信息
+    """
     try:
         with DDGS() as ddgs:
             results = list(ddgs.text(query, max_results=max_results))
-        if not results:
-            return f"未找到与 '{query}' 相关的结果"
-
-        lines = []
-        for i, r in enumerate(results, 1):
-            title = r.get("title", "无标题")
-            href = r.get("href", "无链接")
-            body = r.get("body", "")[:150]
-            lines.append(f"{i}. {title}")
-            lines.append(f"   链接: {href}")
-            lines.append(f"   摘要: {body}")
-        return "\n".join(lines)
+        return "未找到相关结果" if not results else "\n".join(
+            f"{i}. {r.get('title', '无标题')}\n"
+            f"   链接: {r.get('href', '无链接')}\n"
+            f"   摘要: {r.get('body', '')[:150]}"
+            for i, r in enumerate(results, 1)
+        )
     except Exception as e:
         return f"搜索失败：{e}"
