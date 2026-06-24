@@ -73,7 +73,7 @@ class Agent:
                 # 执行每个工具调用并记录结果
                 for tc in message.tool_calls:
                     self.stats["tool_calls"] += 1  # 统计
-                    result = self.tools.execute(tc.function.name, json.loads(tc.function.arguments))
+                    result = self._safe_execute_tool(tc.function.name, tc.function.arguments)
                     self.memory.add_message({"role": "tool", "tool_call_id": tc.id, "content": result})
             else:
                 # LLM 返回文本 → 对话结束
@@ -106,6 +106,22 @@ class Agent:
         self.memory.reset()
         self._recent_tool_calls = []
         self.stats = {"tool_calls": 0, "steps": 0, "total_tokens": 0}  # 重置统计
+
+    def _safe_execute_tool(self, name: str, args_str: str) -> str:
+        """安全执行工具：JSON 解析兜底 + 错误友好返回"""
+        import ast
+        # 1. 尝试 JSON 解析，失败用 ast.literal_eval 兜底
+        try:
+            args = json.loads(args_str)
+        except (json.JSONDecodeError, TypeError):
+            try:
+                # 尝试修复常见 LLM 输出格式问题
+                cleaned = args_str.strip().replace("'", '"')
+                args = json.loads(cleaned)
+            except (json.JSONDecodeError, TypeError):
+                return f"错误：工具参数解析失败，请检查 JSON 格式: {args_str[:100]}"
+        # 2. 执行工具
+        return self.tools.execute(name, args)
 
     def compress_history(self) -> str:
         """压缩对话历史：用 LLM 生成摘要替换原始消息（Hermes /compress 风格）"""

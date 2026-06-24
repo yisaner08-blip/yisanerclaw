@@ -13,8 +13,11 @@ def calculator(expression: str) -> str:
         计算结果或错误信息
     """
     # 安全沙箱：只允许有限的内置函数和 math 模块
-    allowed_names = {"__builtins__": None}  # 禁用所有 builtin
-    allowed_names.update({name: getattr(math, name) for name in dir(math) if not name.startswith("_")})
+    allowed_names = {"__builtins__": {}, "math": math}  # 空 builtins + math 模块
+    # 注册常用内置函数
+    allowed_names.update({name: fn for name, fn in {
+        "abs": abs, "round": round, "min": min, "max": max, "pow": pow, "int": int, "float": float,
+    }.items()})
 
     try:
         # 先检查表达式是否只包含允许的字符

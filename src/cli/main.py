@@ -1,5 +1,6 @@
 """CLI 交互界面 —— 在终端里和 Agent 对话"""
 
+import time
 from rich.console import Console
 from rich.panel import Panel
 from rich.markdown import Markdown
@@ -10,6 +11,7 @@ from src.core.agent import Agent
 from src.core.planner import Planner
 from src.core.vector_memory import VectorMemory
 from src.core.session import save_session, list_sessions  # 持久化会话
+from src.core.skill import list_skills, save_skill, load_skill  # 技能系统
 
 # 导入工具模块触发自注册（Hermes 风格：不直接使用，仅触发 registry.register）
 import src.tools.calculator  # noqa: F401
@@ -117,7 +119,7 @@ def main():
                 final_parts.append(f"### Step {i}: {step}\n\n{result}")
                 console.print(Markdown(f"**结果:** {result[:200]}{'...' if len(result) > 200 else ''}"))
                 console.print()
-                agent.reset_memory()
+                # 保留上下文，不 reset
 
             # 汇总
             summary_prompt = f"用户原始任务：{task}\n\n以下是各步骤执行结果，请汇总成最终答案：\n\n" + "\n\n".join(final_parts)
@@ -186,6 +188,33 @@ def main():
                 console.print(table)
             else:
                 console.print("[yellow]暂无历史会话[/yellow]")
+            continue
+
+        # /skills 命令：列出可用技能
+        if cmd.strip() == "/skills":
+            skills = list_skills()
+            if skills:
+                table = Table(title="可用技能", border_style="cyan")
+                table.add_column("名称", style="green")
+                table.add_column("描述")
+                table.add_column("步骤", style="dim")
+                for s in skills:
+                    table.add_row(s["name"], s["description"], str(s["steps"]))
+                console.print(table)
+            else:
+                console.print("[yellow]暂无已保存的技能[/yellow]")
+            continue
+
+        # /consolidate 命令：总结当前对话并存入长期记忆
+        if cmd.strip() == "/consolidate":
+            with console.status("[cyan]巩固记忆...[/cyan]"):
+                summary = agent.compress_history()
+                try:
+                    vm.remember(f"consolidated_{int(time.time())}", summary)
+                    console.print(f"[green]已巩固记忆[/green]")
+                except Exception:
+                    console.print("[yellow]长期记忆不可用，仅显示摘要[/yellow]")
+                    console.print(summary[:300])
             continue
 
         # 普通对话

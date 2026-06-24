@@ -1,0 +1,29 @@
+# yisanerclaw 配置文件
+
+# === LLM Provider ===
+provider: deepseek  # deepseek | openai | custom
+model: deepseek-v4-flash
+
+# === 工具开关（注释掉即禁用） ===
+tools:
+  calculator: true
+  read_file: true
+  write_file: true
+  list_directory: true
+  web_search: true
+  web_fetch: true
+  run_shell: true
+  get_current_time: true
+  get_environment: true
+
+# === 记忆配置 ===
+memory:
+  short_term_max_turns: 20   # 短期记忆最大轮数
+  short_term_max_tokens: 16000  # Token 上限
+  long_term_enabled: true    # 是否启用 ChromaDB 长期记忆
+  auto_recall: true          # 是否自动检索长期记忆
+
+# === Agent 配置 ===
+agent:
+  max_steps: 10              # 最大 ReAct 循环步数
+  temperature: 0.0           # LLM 温度参数
