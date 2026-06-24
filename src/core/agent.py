@@ -51,8 +51,8 @@ class Agent:
             message = self.llm.chat_with_tools(self.memory.to_messages(), tools_openai)
 
             if message.tool_calls:
-                # 检测重复调用（连续 2 次相同则终止）
-                current_calls = tuple(tc.function.name for tc in message.tool_calls)
+                # 检测重复调用（连续2次，名称+参数相同则终止）
+                current_calls = tuple(f"{tc.function.name}:{tc.function.arguments}" for tc in message.tool_calls)
                 self._recent_tool_calls.append(current_calls)
                 if len(self._recent_tool_calls) > 2:
                     self._recent_tool_calls.pop(0)  # 保持窗口大小 2
