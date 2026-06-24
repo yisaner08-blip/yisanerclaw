@@ -1,7 +1,26 @@
 """网页抓取工具 —— 获取网页内容并提取文本"""
 
-from urllib.request import urlopen, Request
+import os
+from urllib.request import urlopen, Request, ProxyHandler, build_opener
 from html.parser import HTMLParser
+
+# 代理配置
+_proxy_url = os.getenv("HTTP_PROXY", os.getenv("http_proxy", ""))
+
+
+def _get_proxy_handler() -> tuple:
+    """获取 urllib 代理 handler"""
+    try:
+        import yaml
+        cfg = yaml.safe_load(open(os.path.join(os.path.dirname(__file__), "..", "..", "config.yaml")))
+        proxy = cfg.get("network", {}).get("proxy", "") if cfg else ""
+        if proxy:
+            return (ProxyHandler({"http": proxy, "https": proxy}),)
+    except Exception:
+        pass
+    if _proxy_url:
+        return (ProxyHandler({"http": _proxy_url, "https": _proxy_url}),)
+    return ()
 
 
 class _TextExtractor(HTMLParser):
@@ -36,7 +55,8 @@ def web_fetch(url: str, max_chars: int = 2000) -> str:
     """
     try:
         req = Request(url, headers={"User-Agent": "Mozilla/5.0 (compatible; Agent/1.0)"})
-        with urlopen(req, timeout=15) as resp:
+        opener = build_opener(*_get_proxy_handler())  # 支持代理
+        with opener.open(req, timeout=15) as resp:
             content_type = resp.headers.get("Content-Type", "")
             if "html" not in content_type.lower() and "text" not in content_type.lower():
                 return f"错误：不支持的内容类型: {content_type}"
