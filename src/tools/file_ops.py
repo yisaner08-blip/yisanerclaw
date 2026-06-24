@@ -56,3 +56,17 @@ def list_directory(dirpath: str = ".") -> str:
         return f"错误：{e}"
     except Exception as e:
         return f"错误：{e}"
+
+
+# 自注册：导入时自动添加到工具注册表
+from src.tools.registry import register
+from src.core.tool import Tool
+register(Tool(name="read_file", description="读取文件内容",
+    parameters={"type": "object", "properties": {"filepath": {"type": "string", "description": "文件路径"}}, "required": ["filepath"]},
+    function=read_file))
+register(Tool(name="write_file", description="写入内容到文件",
+    parameters={"type": "object", "properties": {"filepath": {"type": "string", "description": "文件路径"}, "content": {"type": "string", "description": "要写入的内容"}}, "required": ["filepath", "content"]},
+    function=write_file))
+register(Tool(name="list_directory", description="列出目录内容",
+    parameters={"type": "object", "properties": {"dirpath": {"type": "string", "description": "目录路径", "default": "."}}},
+    function=list_directory))

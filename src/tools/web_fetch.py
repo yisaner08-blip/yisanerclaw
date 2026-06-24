@@ -48,3 +48,12 @@ def web_fetch(url: str, max_chars: int = 2000) -> str:
         return text[:max_chars] + "\n...(已截断)" if len(text) > max_chars else text
     except Exception as e:
         return f"抓取失败：{e}"
+
+# 自注册
+from src.tools.registry import register
+from src.core.tool import Tool
+register(Tool(
+    name="web_fetch", description="抓取网页内容，提取正文文本",
+    parameters={"type": "object", "properties": {"url": {"type": "string", "description": "要抓取的网页 URL"}}, "required": ["url"]},
+    function=web_fetch,
+))

@@ -23,3 +23,12 @@ def web_search(query: str, max_results: int = 5) -> str:
         )
     except Exception as e:
         return f"搜索失败：{e}"
+
+# 自注册
+from src.tools.registry import register
+from src.core.tool import Tool
+register(Tool(
+    name="web_search", description="搜索网页，返回标题、链接和摘要",
+    parameters={"type": "object", "properties": {"query": {"type": "string", "description": "搜索关键词"}, "max_results": {"type": "integer", "description": "最多返回几条结果", "default": 5}}, "required": ["query"]},
+    function=web_search,
+))

@@ -37,3 +37,12 @@ def run_shell(command: str, timeout: int = 30) -> str:
         return f"错误：命令超时（>{timeout}秒）"
     except Exception as e:
         return f"错误：{e}"
+
+# 自注册
+from src.tools.registry import register
+from src.core.tool import Tool
+register(Tool(
+    name="run_shell", description="执行安全的 shell 命令并返回输出",
+    parameters={"type": "object", "properties": {"command": {"type": "string", "description": "要执行的命令"}}, "required": ["command"]},
+    function=run_shell,
+))

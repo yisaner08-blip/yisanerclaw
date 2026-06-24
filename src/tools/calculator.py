@@ -23,3 +23,12 @@ def calculator(expression: str) -> str:
         return str(eval(expression, allowed_names))  # 在受限命名空间执行
     except Exception as e:
         return f"错误：{e}"
+
+# 自注册：导入时自动添加到工具注册表
+from src.tools.registry import register
+from src.core.tool import Tool
+register(Tool(
+    name="calculator", description="计算数学表达式",
+    parameters={"type": "object", "properties": {"expression": {"type": "string", "description": "数学表达式"}}, "required": ["expression"]},
+    function=calculator,
+))

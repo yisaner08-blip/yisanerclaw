@@ -20,3 +20,9 @@ def get_environment() -> str:
         f"工作目录: {os.getcwd()}",
         f"用户: {os.getenv('USER', os.getenv('USERNAME', 'unknown'))}",
     ])
+
+# 自注册
+from src.tools.registry import register
+from src.core.tool import Tool
+register(Tool(name="get_current_time", description="获取当前日期和时间", parameters={"type": "object", "properties": {}}, function=get_current_time))
+register(Tool(name="get_environment", description="获取系统环境信息", parameters={"type": "object", "properties": {}}, function=get_environment))

@@ -4,6 +4,7 @@ import json
 from src.core.llm import LLM
 from src.core.tool import ToolRegistry
 from src.core.memory import ConversationMemory
+from src.core.context import build_system_prompt  # Hermes 风格：外置系统提示词
 
 
 class Agent:
@@ -11,37 +12,16 @@ class Agent:
 
     def __init__(self, llm: LLM, tool_registry: ToolRegistry,
                  system_prompt: str = None, vector_memory=None):
-        """初始化 Agent
-
-        Args:
-            llm: 大模型客户端
-            tool_registry: 工具注册表
-            system_prompt: 系统提示词，默认使用内置规则
-            vector_memory: 可选长期向量记忆
-        """
-        self.llm = llm  # LLM 客户端
-        self.tools = tool_registry  # 工具注册表
-        self.system_prompt = system_prompt or self._default_system_prompt()  # 系统提示词
-        self.memory = ConversationMemory()  # 短期对话记忆
+        self.llm = llm
+        self.tools = tool_registry
+        # 优先使用传入的 system_prompt，否则从 SOUL.md + CONTEXT.md 加载
+        self.system_prompt = system_prompt or build_system_prompt()
+        self.memory = ConversationMemory()
         self.memory.set_system(self.system_prompt)
-        self.vector_memory = vector_memory  # 可选长期记忆
-        self._recent_tool_calls: list = []  # 滑动窗口记录最近调用，用于重复检测
-
-    def _default_system_prompt(self) -> str:
-        """内置系统提示词：工具选择策略 + 行为约束"""
-        return (
-            "你是智能助手，可使用工具完成任务。\n\n"
-            "<rules>\n"
-            "- 已知道答案时直接回答，不要调用工具\n"
-            "- 需要最新/外部信息时用 web_search 或 web_fetch\n"
-            "- 需要文件操作时用 read_file/write_file/list_directory\n"
-            "- 需要执行命令时用 run_shell\n"
-            "- 数学计算用 calculator\n"
-            "- 工具返回错误时，分析原因后修正参数重试（最多1次）\n"
-            "- 回答简洁准确，优先用列表，避免冗长\n"
-            "- 你的知识截止 2025年5月，之后的事件请用搜索工具\n"
-            "</rules>"
-        )
+        self.vector_memory = vector_memory
+        self._recent_tool_calls: list = []  # 重复检测滑动窗口
+        # 统计计数器
+        self.stats = {"tool_calls": 0, "steps": 0, "total_tokens": 0}  # 运行统计
 
     def run(self, user_input: str, max_steps: int = 10,
             auto_recall: bool = True, auto_remember: bool = False) -> str:
@@ -66,7 +46,8 @@ class Agent:
         tools_openai = self.tools.to_openai_format()  # 工具定义（每轮相同，可缓存但暂不优化）
         self._recent_tool_calls = []  # 重置重复检测滑动窗口
 
-        for _ in range(max_steps):
+        for step in range(max_steps):
+            self.stats["steps"] = step + 1  # 记录步数
             message = self.llm.chat_with_tools(self.memory.to_messages(), tools_openai)
 
             if message.tool_calls:
@@ -91,6 +72,7 @@ class Agent:
 
                 # 执行每个工具调用并记录结果
                 for tc in message.tool_calls:
+                    self.stats["tool_calls"] += 1  # 统计
                     result = self.tools.execute(tc.function.name, json.loads(tc.function.arguments))
                     self.memory.add_message({"role": "tool", "tool_call_id": tc.id, "content": result})
             else:
@@ -123,6 +105,21 @@ class Agent:
         """清除短期对话记忆"""
         self.memory.reset()
         self._recent_tool_calls = []
+        self.stats = {"tool_calls": 0, "steps": 0, "total_tokens": 0}  # 重置统计
+
+    def compress_history(self) -> str:
+        """压缩对话历史：用 LLM 生成摘要替换原始消息（Hermes /compress 风格）"""
+        messages = self.memory.to_messages()
+        if len(messages) < 4:
+            return "消息太少，无需压缩"
+        # 用 LLM 生成摘要
+        summary = self.llm.chat(
+            [{"role": "user", "content": f"请用中文简短总结以下对话的关键信息（200字内）：\n{str(messages)}"}],
+            temperature=0.0
+        )
+        self.memory.reset()
+        self.memory.add_message({"role": "user", "content": f"[历史摘要] {summary}"})
+        return summary
 
     def run_planned(self, task: str, planner, verbose: bool = False) -> str:
         """拆解任务 → 逐步执行 → 汇总结果"""

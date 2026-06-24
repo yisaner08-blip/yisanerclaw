@@ -6,137 +6,33 @@ from rich.markdown import Markdown
 from rich.table import Table
 
 from src.core.llm import LLM
-from src.core.tool import Tool, ToolRegistry
 from src.core.agent import Agent
 from src.core.planner import Planner
 from src.core.vector_memory import VectorMemory
-from src.tools.calculator import calculator
-from src.tools.file_ops import read_file, write_file, list_directory
-from src.tools.web_search import web_search
-from src.tools.web_fetch import web_fetch
-from src.tools.shell import run_shell
-from src.tools.system_info import get_current_time, get_environment
+from src.core.session import save_session, list_sessions  # 持久化会话
+
+# 导入工具模块触发自注册（Hermes 风格：不直接使用，仅触发 registry.register）
+import src.tools.calculator  # noqa: F401
+import src.tools.file_ops    # noqa: F401
+import src.tools.web_search  # noqa: F401
+import src.tools.web_fetch   # noqa: F401
+import src.tools.shell       # noqa: F401
+import src.tools.system_info # noqa: F401
+from src.tools.registry import get_registry
 
 
 def create_agent(vm=None) -> Agent:
-    llm = LLM()
-    registry = ToolRegistry()
-
-    registry.register(Tool(
-        name="calculator",
-        description="计算数学表达式",
-        parameters={
-            "type": "object",
-            "properties": {
-                "expression": {"type": "string", "description": "数学表达式，如 '2+3*4' 或 'math.sqrt(100)'"}
-            },
-            "required": ["expression"]
-        },
-        function=calculator
-    ))
-    registry.register(Tool(
-        name="read_file",
-        description="读取文件内容",
-        parameters={
-            "type": "object",
-            "properties": {
-                "filepath": {"type": "string", "description": "文件路径"}
-            },
-            "required": ["filepath"]
-        },
-        function=read_file
-    ))
-    registry.register(Tool(
-        name="write_file",
-        description="写入内容到文件，会自动创建父目录",
-        parameters={
-            "type": "object",
-            "properties": {
-                "filepath": {"type": "string", "description": "文件路径"},
-                "content": {"type": "string", "description": "要写入的内容"}
-            },
-            "required": ["filepath", "content"]
-        },
-        function=write_file
-    ))
-    registry.register(Tool(
-        name="list_directory",
-        description="列出目录内容",
-        parameters={
-            "type": "object",
-            "properties": {
-                "dirpath": {"type": "string", "description": "目录路径，默认当前目录", "default": "."}
-            }
-        },
-        function=list_directory
-    ))
-    registry.register(Tool(
-        name="web_search",
-        description="搜索网页，返回标题、链接和摘要",
-        parameters={
-            "type": "object",
-            "properties": {
-                "query": {"type": "string", "description": "搜索关键词"},
-                "max_results": {"type": "integer", "description": "最多返回几条结果", "default": 5}
-            },
-            "required": ["query"]
-        },
-        function=web_search
-    ))
-
-    # 注册 shell 执行工具
-    registry.register(Tool(
-        name="run_shell",
-        description="执行安全的 shell 命令并返回输出",
-        parameters={
-            "type": "object",
-            "properties": {
-                "command": {"type": "string", "description": "要执行的 shell 命令，如 'ls -la' 或 'cat file.txt'"}
-            },
-            "required": ["command"]
-        },
-        function=run_shell
-    ))
-
-    # 注册网页抓取工具
-    registry.register(Tool(
-        name="web_fetch",
-        description="抓取网页内容，提取正文文本",
-        parameters={
-            "type": "object",
-            "properties": {
-                "url": {"type": "string", "description": "要抓取的网页 URL"}
-            },
-            "required": ["url"]
-        },
-        function=web_fetch
-    ))
-
-    # 注册系统信息工具
-    registry.register(Tool(
-        name="get_current_time",
-        description="获取当前日期和时间",
-        parameters={"type": "object", "properties": {}},
-        function=get_current_time
-    ))
-    registry.register(Tool(
-        name="get_environment",
-        description="获取系统环境信息：Python 版本、操作系统、工作目录",
-        parameters={"type": "object", "properties": {}},
-        function=get_environment
-    ))
-
-    return Agent(llm=llm, tool_registry=registry, vector_memory=vm)
+    """创建 Agent，使用工具模块自注册的全局注册表"""
+    return Agent(llm=LLM(), tool_registry=get_registry(), vector_memory=vm)
 
 
 def main():
     console = Console()
     console.print(Panel.fit(
-        "[bold cyan]AI Agent[/bold cyan] — ReAct 模式 (8 工具)\n"
-        "命令: [bold blue]/plan[/bold blue] 分解  [bold blue]/run[/bold blue] 分解执行  [bold blue]/todo[/bold blue] 任务状态\n"
-        "      [bold blue]/remember[/bold blue] 长期记忆  [bold blue]/recall[/bold blue] 语义检索\n"
-        "直接输入问题  Agent 自动调用工具回答\n"
-        "[bold red]退出/exit/q[/bold red] 结束 | [bold yellow]reset[/bold yellow] 清除记忆",
+        "[bold cyan]yisanerclaw[/bold cyan] — ReAct Agent (9 工具)\n"
+        "[bold blue]/plan[/bold blue] 分解  [bold blue]/run[/bold blue] 执行  [bold blue]/remember[/bold blue] 记忆\n"
+        "[bold blue]/recall[/bold blue] 检索  [bold blue]/compress[/bold blue] 压缩  [bold blue]/usage[/bold blue] 统计\n"
+        "[bold blue]/sessions[/bold blue] 历史  [bold red]退出/exit/q[/bold red]  [bold yellow]reset[/bold yellow] 清除",
         title="欢迎"
     ))
 
@@ -257,6 +153,39 @@ def main():
                 console.print(table)
             else:
                 console.print("[yellow]未找到相关记忆[/yellow]")
+            continue
+
+        # /compress 命令：压缩对话历史
+        if cmd.strip() == "/compress":
+            with console.status("[cyan]压缩中...[/cyan]"):
+                summary = agent.compress_history()
+            console.print(f"[green]已压缩：{summary[:200]}...[/green]")
+            continue
+
+        # /usage 命令：显示当前统计
+        if cmd.strip() == "/usage":
+            s = agent.stats
+            table = Table(title="会话统计", border_style="cyan")
+            table.add_column("指标", style="dim")
+            table.add_column("值")
+            table.add_row("工具调用", str(s["tool_calls"]))
+            table.add_row("思考步数", str(s["steps"]))
+            console.print(table)
+            continue
+
+        # /sessions 命令：列出历史会话
+        if cmd.strip() == "/sessions":
+            sessions = list_sessions()
+            if sessions:
+                table = Table(title="历史会话", border_style="cyan")
+                table.add_column("ID", style="dim")
+                table.add_column("标题")
+                table.add_column("工具调用", style="dim")
+                for s in sessions:
+                    table.add_row(s["id"], s["title"], str(s["tool_calls"]))
+                console.print(table)
+            else:
+                console.print("[yellow]暂无历史会话[/yellow]")
             continue
 
         # 普通对话
