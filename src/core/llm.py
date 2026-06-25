@@ -8,43 +8,61 @@ load_dotenv()  # 加载 .env 中的 API Key 和配置
 
 
 class LLM:
-    """封装 OpenAI 兼容 API 的大模型客户端"""
+    """封装 OpenAI 兼容 API 的大模型客户端（Hermes fallback 对齐）"""
 
-    def __init__(self, model=None, api_key=None, base_url=None):
-        """初始化 LLM 客户端，优先用传入参数，其次从环境变量读取
-
-        Args:
-            model: 模型名，默认读取 MODEL_NAME 环境变量
-            api_key: API 密钥，默认读取 OPENAI_API_KEY
-            base_url: API 地址，默认读取 OPENAI_BASE_URL
-        """
-        self.model = model or os.getenv("MODEL_NAME", "deepseek-chat")  # 模型标识
+    def __init__(self, model=None, api_key=None, base_url=None, fallback_clients: list = None):
+        self.model = model or os.getenv("MODEL_NAME", "deepseek-chat")
         self.client = OpenAI(
-            api_key=api_key or os.getenv("OPENAI_API_KEY"),  # API 密钥
-            base_url=base_url or os.getenv("OPENAI_BASE_URL"),  # API 基础地址
+            api_key=api_key or os.getenv("OPENAI_API_KEY"),
+            base_url=base_url or os.getenv("OPENAI_BASE_URL"),
         )
+        # Fallback 链：主客户端失败时依次尝试
+        self._fallbacks = fallback_clients or []  # [(client, model_name), ...]
+
+    def add_fallback(self, client, model_name: str):
+        """添加降级客户端"""
+        self._fallbacks.append((client, model_name))
+
+    def _api_call(self, fn, *args, **kwargs) -> object:
+        """执行 API 调用，失败时自动降级（Hermes fallback 对齐）"""
+        errors = []
+        # 1. 尝试主客户端
+        try:
+            return fn(self.client, self.model, *args, **kwargs)
+        except Exception as e:
+            errors.append(f"主: {e}")
+        # 2. 依次尝试 fallback
+        for client, model in self._fallbacks:
+            try:
+                return fn(client, model, *args, **kwargs)
+            except Exception as e:
+                errors.append(f"降级({model}): {e}")
+        raise RuntimeError(f"所有 provider 均失败: {'; '.join(errors)}")
+
+    def _raw_chat(self, client, model, messages, temperature):
+        return client.chat.completions.create(model=model, messages=messages, temperature=temperature)
+
+    def _raw_chat_with_tools(self, client, model, messages, tools, temperature):
+        return client.chat.completions.create(model=model, messages=messages, tools=tools, temperature=temperature)
+
+    def _raw_chat_stream(self, client, model, messages, tools, temperature):
+        kwargs = {"model": model, "messages": messages, "temperature": temperature, "stream": True}
+        if tools: kwargs["tools"] = tools
+        return client.chat.completions.create(**kwargs)
 
     def chat(self, messages: list[dict], temperature=0.0) -> str:
         """发送消息给 LLM，返回纯文本回复"""
-        return self.client.chat.completions.create(model=self.model, messages=messages, temperature=temperature).choices[0].message.content
+        resp = self._api_call(self._raw_chat, messages, temperature=temperature)
+        return resp.choices[0].message.content
 
     def chat_with_tools(self, messages: list[dict], tools: list[dict], temperature=0.0):
         """调用 LLM，支持 tool calling，返回原始 message 对象"""
-        return self.client.chat.completions.create(model=self.model, messages=messages, tools=tools, temperature=temperature).choices[0].message
+        resp = self._api_call(self._raw_chat_with_tools, messages, tools, temperature=temperature)
+        return resp.choices[0].message
 
     def chat_stream(self, messages: list[dict], tools: list[dict] = None, temperature=0.0):
-        """流式调用 LLM，逐 token yield（Hermes stream_delta_callback 对齐）
-
-        Yields:
-            dict: {"type": "token", "content": "..."}  — 文本 token
-            dict: {"type": "tool_call", "name": "...", "arguments": "..."}  — 完成的工具调用
-            dict: {"type": "done", "message": message}  — 流结束，携带完整 message
-        """
-        kwargs = {"model": self.model, "messages": messages, "temperature": temperature, "stream": True}
-        if tools:
-            kwargs["tools"] = tools
-        stream = self.client.chat.completions.create(**kwargs)
-
+        """流式调用 LLM，逐 token yield（带 fallback）"""
+        stream = self._api_call(self._raw_chat_stream, messages, tools, temperature=temperature)
         content_buf = ""
         tool_calls_buf: dict[int, dict] = {}  # index → {name, arguments}
         for chunk in stream:
