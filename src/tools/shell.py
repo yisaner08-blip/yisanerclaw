@@ -20,6 +20,10 @@ def run_shell(command: str, timeout: int = 30) -> str:
     """
     # 次责除 b 匹配禁止命令（不区分大小写）
     cmd_lower = command.lower().strip()
+    # Hermes 对齐：审批检查（先检查新的审批系统）
+    from src.core.approval import need_approval as _need_approval, check_dangerous
+    if check_dangerous(cmd_lower):
+        return f"错误：危险命令被拦截: {command}"
     for banned in BANNED_COMMANDS:
         if banned in cmd_lower:
             return f"错误：命令包含禁止的操作: {banned}"
