@@ -1,3 +1,9 @@
+---
+description: Python 编码风格，含 Ponytail 懒惰阶梯引用
+alwaysApply: true
+enabled: true
+---
+
 # Python 编码风格
 
 ## 通用规范
