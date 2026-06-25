@@ -22,8 +22,6 @@ _ch.setLevel(logging.INFO)
 _ch.setFormatter(logging.Formatter("[%(levelname)s] %(message)s"))
 _logger.addHandler(_ch)
 
+LOGGER = _logger  # ponytail: stdlib — 直接 logging.getLogger，无需包装函数
 
-def debug(msg: str): _logger.debug(msg)
-def info(msg: str): _logger.info(msg)
-def warning(msg: str): _logger.warning(msg)
-def error(msg: str): _logger.error(msg)
+

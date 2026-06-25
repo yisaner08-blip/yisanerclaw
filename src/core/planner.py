@@ -1,5 +1,6 @@
 """任务规划器 —— 将复杂任务分解为子任务"""
 
+import re
 from src.core.llm import LLM
 
 
@@ -31,7 +32,7 @@ class Planner:
         for line in response.strip().split("\n"):
             s = line.strip()
             if s and (s[0].isdigit() or s.startswith("- ")):
-                step = s.lstrip("0123456789. -)）")  # 去掉编号前缀
+                step = re.sub(r'^\d+[\.\)、\s\-]+', '', s)  # ponytail: stdlib — re.sub 替代 lstrip
                 if step:
                     steps.append(step)
         return steps
