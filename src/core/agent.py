@@ -94,12 +94,9 @@ class Agent:
         return "Agent 执行超过最大步数，任务中断。"
 
     def _get_recalled_context(self, query: str) -> str:
-        """检索长期记忆并格式化为上下文文本"""
-        try:
-            recalled = self.vector_memory.recall(query, n_results=2)
-            return "\n".join([f"- {r['content']}" for r in recalled]) if recalled else ""
-        except Exception:
-            return ""  # 向量记忆不可用时静默跳过
+        """检索长期记忆并格式化为上下文"""
+        try: return "\n".join(f"- {r['content']}" for r in self.vector_memory.recall(query, n_results=2))
+        except Exception: return ""
 
     def reset_memory(self):
         """清除短期对话记忆"""

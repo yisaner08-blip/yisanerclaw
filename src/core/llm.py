@@ -25,30 +25,9 @@ class LLM:
         )
 
     def chat(self, messages: list[dict], temperature=0.0) -> str:
-        """发送消息给 LLM，返回纯文本回复（不含工具调用）
-
-        Args:
-            messages: 对话历史列表 [{"role": "user", "content": "..."}]
-            temperature: 随机性参数，0 表示确定性输出
-        Returns:
-            LLM 的文本回复
-        """
-        response = self.client.chat.completions.create(
-            model=self.model, messages=messages, temperature=temperature,
-        )
-        return response.choices[0].message.content  # 提取回复文本
+        """发送消息给 LLM，返回纯文本回复"""
+        return self.client.chat.completions.create(model=self.model, messages=messages, temperature=temperature).choices[0].message.content
 
     def chat_with_tools(self, messages: list[dict], tools: list[dict], temperature=0.0):
-        """调用 LLM，支持 tool calling。返回原始 message 对象
-
-        Args:
-            messages: 对话历史
-            tools: OpenAI function calling 格式的工具定义
-            temperature: 随机性
-        Returns:
-            message 对象，可通过 .content 和 .tool_calls 分别获取文本和工具调用
-        """
-        response = self.client.chat.completions.create(
-            model=self.model, messages=messages, tools=tools, temperature=temperature,
-        )
-        return response.choices[0].message  # 返回完整消息对象
+        """调用 LLM，支持 tool calling，返回原始 message 对象"""
+        return self.client.chat.completions.create(model=self.model, messages=messages, tools=tools, temperature=temperature).choices[0].message

@@ -13,13 +13,7 @@ def get_current_time() -> str:
 
 def get_environment() -> str:
     """获取系统环境信息：Python 版本、OS、工作目录等"""
-    return "\n".join([
-        f"Python: {sys.version.split()[0]}",  # 仅取版本号
-        f"OS: {platform.system()} {platform.release()}",
-        f"主机名: {platform.node()}",
-        f"工作目录: {os.getcwd()}",
-        f"用户: {os.getenv('USER', os.getenv('USERNAME', 'unknown'))}",
-    ])
+    return f"Python: {sys.version.split()[0]}\nOS: {platform.system()} {platform.release()}\n主机名: {platform.node()}\n工作目录: {os.getcwd()}\n用户: {os.getenv('USER', os.getenv('USERNAME', 'unknown'))}"
 
 # 自注册
 from src.tools.registry import register

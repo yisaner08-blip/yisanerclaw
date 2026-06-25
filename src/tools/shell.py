@@ -29,9 +29,7 @@ def run_shell(command: str, timeout: int = 30) -> str:
             command, shell=True, capture_output=True, text=True,
             timeout=timeout, cwd=None  # 继承当前工作目录
         )
-        # 合并 stdout 和 stderr
-        output = result.stdout + (f"\n[stderr]\n{result.stderr}" if result.stderr else "")
-        output = output.strip() or "(命令执行成功，无输出)"
+        output = (result.stdout + (f"\n[stderr]\n{result.stderr}" if result.stderr else "")).strip() or "(命令执行成功，无输出)"
         return output[:2000] + "\n...(已截断)" if len(output) > 2000 else output
     except subprocess.TimeoutExpired:
         return f"错误：命令超时（>{timeout}秒）"
