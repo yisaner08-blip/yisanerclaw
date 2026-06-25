@@ -11,7 +11,10 @@ from src.core.agent import Agent
 from src.core.planner import Planner
 from src.core.vector_memory import VectorMemory
 from src.core.session import save_session, list_sessions  # 持久化会话
+from src.core.session import search_sessions  # FTS5 全文搜索
 from src.core.skill import list_skills, save_skill, load_skill  # 技能系统
+from src.core.skill import learn_skill  # /learn 命令
+from src.core import cron  # Cron 定时任务
 
 # 导入工具模块触发自注册（Hermes 风格：不直接使用，仅触发 registry.register）
 import src.tools.calculator  # noqa: F401
@@ -203,6 +206,78 @@ def main():
                 console.print(table)
             else:
                 console.print("[yellow]暂无已保存的技能[/yellow]")
+            continue
+
+        # /learn 命令：从对话中学习技能
+        if cmd.startswith("/learn "):
+            topic = cmd[len("/learn "):].strip()
+            with console.status("[cyan]学习中...[/cyan]"):
+                result = learn_skill(agent, topic)
+            console.print(f"[green]{result}[/green]")
+            continue
+
+        # /cron 命令：定时任务管理
+        if cmd.startswith("/cron "):
+            parts = cmd[len("/cron "):].strip().split(maxsplit=2)
+            action = parts[0] if parts else ""
+            if action == "add" and len(parts) >= 3:
+                job_id = cron.add_job(parts[1], parts[2])
+                console.print(f"[green]已创建定时任务: {job_id}[/green]")
+            elif action == "list":
+                jobs = cron.list_jobs()
+                if jobs:
+                    table = Table(title="定时任务", border_style="cyan")
+                    table.add_column("ID", style="dim")
+                    table.add_column("调度")
+                    table.add_column("任务")
+                    table.add_column("状态")
+                    for j in jobs:
+                        status = "⏸ 暂停" if j["paused"] else "▶ 运行"
+                        table.add_row(j["id"], j["schedule"], j["task"][:30], status)
+                    console.print(table)
+                else:
+                    console.print("[yellow]暂无定时任务[/yellow]")
+            elif action == "remove" and len(parts) >= 2:
+                ok = cron.remove_job(parts[1])
+                console.print(f"[green]已删除[/green]" if ok else "[red]未找到该任务[/red]")
+            elif action == "pause" and len(parts) >= 2:
+                cron.pause_job(parts[1])
+                console.print("[green]已暂停[/green]")
+            elif action == "resume" and len(parts) >= 2:
+                cron.resume_job(parts[1])
+                console.print("[green]已恢复[/green]")
+            elif action == "tick":
+                results = cron.tick()
+                console.print(f"[green]执行了 {len(results)} 个到期任务[/green]")
+            else:
+                console.print("[yellow]用法: /cron add <schedule> <任务> | list | remove <id> | pause <id> | resume <id>[/yellow]")
+            continue
+
+        # /search 命令：FTS5 全文搜索历史会话
+        if cmd.startswith("/search "):
+            query = cmd[len("/search "):].strip()
+            results = search_sessions(query)
+            if results:
+                table = Table(title=f"搜索: {query}", border_style="cyan")
+                table.add_column("ID", style="dim")
+                table.add_column("标题")
+                table.add_column("工具调用")
+                for s in results:
+                    table.add_row(s["id"], s["title"], str(s["tool_calls"]))
+                console.print(table)
+            else:
+                console.print("[yellow]未找到匹配的会话[/yellow]")
+            continue
+
+        # /delegate 命令：创建子代理执行任务
+        if cmd.startswith("/delegate "):
+            task = cmd[len("/delegate "):].strip()
+            with console.status("[cyan]子代理执行中...[/cyan]"):
+                # 子代理：独立记忆，共享工具
+                sub = Agent(llm=agent.llm, tool_registry=agent.tools)
+                sub.reset_memory()
+                result = sub.run(task)
+                console.print(Panel(Markdown(result), title="[bold magenta]子代理[/bold magenta]", border_style="magenta"))
             continue
 
         # /consolidate 命令：总结当前对话并存入长期记忆

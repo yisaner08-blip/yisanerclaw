@@ -23,17 +23,39 @@ def _get_conn() -> sqlite3.Connection:
             tool_calls INTEGER DEFAULT 0  -- 工具调用次数
         )
     """)
+    # FTS5 全文搜索虚拟表（Hermes 风格：跨会话内容搜索）
+    conn.execute("""
+        CREATE VIRTUAL TABLE IF NOT EXISTS sessions_fts USING fts5(
+            id, title, content, tokenize='unicode61'
+        )
+    """)
     conn.commit()
     return conn
 
 
 def save_session(session_id: str, title: str, messages: list[dict], tool_calls: int = 0):
-    """保存会话到 SQLite"""
+    """保存会话到 SQLite 并建立 FTS5 索引"""
     conn = _get_conn()
     conn.execute("INSERT OR REPLACE INTO sessions VALUES (?, ?, ?, ?, ?)",
                  (session_id, title, json.dumps(messages, ensure_ascii=False), time.time(), tool_calls))
+    # 同步 FTS5 索引
+    content_text = " ".join(str(m.get("content", "")) for m in messages)
+    conn.execute("INSERT OR REPLACE INTO sessions_fts VALUES (?, ?, ?)",
+                 (session_id, title, content_text))
     conn.commit()
     conn.close()
+
+def search_sessions(query: str, limit: int = 10) -> list[dict]:
+    """FTS5 全文搜索会话内容"""
+    conn = _get_conn()
+    rows = conn.execute(
+        "SELECT s.id, s.title, s.created_at, s.tool_calls "
+        "FROM sessions s JOIN sessions_fts f ON s.id = f.id "
+        "WHERE sessions_fts MATCH ? LIMIT ?",
+        (query, limit)
+    ).fetchall()
+    conn.close()
+    return [{"id": r[0], "title": r[1], "created_at": r[2], "tool_calls": r[3]} for r in rows]
 
 
 def load_session(session_id: str) -> dict | None:
