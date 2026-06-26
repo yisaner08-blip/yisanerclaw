@@ -16,6 +16,12 @@ from src.core.skill import list_skills, save_skill, load_skill  # 技能系统
 from src.core.skill import learn_skill  # /learn 命令
 from src.core import cron  # Cron 定时任务
 from src.core.mcp_client import connect_mcp, list_mcp  # MCP
+import src.tools.browse  # noqa: F401  Phase 4: 文本浏览器
+import src.tools.tts     # noqa: F401  Phase 5: TTS
+import src.tools.desktop # noqa: F401  Phase 6: 桌面控制
+
+# Phase 3: Hook 系统
+_hooks: dict[str, list[str]] = {"pre_tool": [], "post_tool": [], "on_start": [], "on_complete": []}
 
 # 导入工具模块触发自注册（Hermes 风格：不直接使用，仅触发 registry.register）
 import src.tools.calculator  # noqa: F401
@@ -342,6 +348,29 @@ def main():
                     console.print("[yellow]无已连接 MCP 服务器[/yellow]")
             else:
                 console.print("[yellow]用法: /mcp connect <name> <command> | list[/yellow]")
+            continue
+
+        # Phase 3: /hook 命令 — 钩子系统
+        if cmd.startswith("/hook "):
+            parts = cmd[len("/hook "):].strip().split(maxsplit=2)
+            action = parts[0] if parts else ""
+            if action == "add" and len(parts) >= 3:
+                event, command_line = parts[1], parts[2]
+                if event in _hooks:
+                    _hooks[event].append(command_line)
+                    console.print(f"[green]已注册 {event} → {command_line}[/green]")
+                else:
+                    console.print(f"[yellow]无效事件: {event}，可用: {', '.join(_hooks.keys())}[/yellow]")
+            elif action == "list":
+                table = Table(title="已注册 Hooks", border_style="cyan")
+                table.add_column("事件")
+                table.add_column("命令")
+                for event, cmds in _hooks.items():
+                    for c in cmds:
+                        table.add_row(event, c)
+                console.print(table)
+            else:
+                console.print("[yellow]用法: /hook add <event> <command> | list[/yellow]")
             continue
 
         # /consolidate 命令：总结当前对话并存入长期记忆

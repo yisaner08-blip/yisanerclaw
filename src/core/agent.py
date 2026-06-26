@@ -76,6 +76,7 @@ class Agent:
                 })
                 for tc in message.tool_calls:
                     self.stats["tool_calls"] += 1
+                    self._tool_seq.append(tc.function.name)  # Phase 4: 技能模式跟踪
                     self.callbacks["on_tool_call"]({"name": tc.function.name, "arguments": tc.function.arguments})
                     result = self._safe_execute_tool(tc.function.name, tc.function.arguments)
                     self.callbacks["on_tool_result"]({"name": tc.function.name, "result": result})

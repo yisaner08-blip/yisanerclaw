@@ -94,3 +94,18 @@ def learn_skill(agent, task_description: str) -> str:
         save_skill(task_description, f"从对话学习：{task_description}", steps, ["learned"])
         return f"已学习技能：{task_description}（{len(steps)} 步）"
     return "未能提取有效步骤，请手动描述后再试"
+
+
+def suggest_skill(agent) -> list[str] | None:
+    """检测重复工具模式并建议技能
+
+    Args:
+        agent: 当前 Agent 实例
+    Returns:
+        建议的技能名称列表
+    """
+    from collections import Counter
+    if len(agent._tool_seq) < 3:
+        return None
+    counts = Counter(agent._tool_seq[-10:])  # 最近 10 次调用
+    return [n for n, c in counts.items() if c >= 2] if any(c >= 2 for c in counts.values()) else None
