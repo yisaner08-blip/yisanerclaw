@@ -22,6 +22,9 @@ class Agent:
         self._recent_tool_calls: list = []  # 重复检测
         self.stats = {"tool_calls": 0, "steps": 0, "total_tokens": 0}  # 运行统计
         self.callbacks = DEFAULT_CALLBACKS | (callbacks or {})  # Hermes 风格回调
+        # Phase 4: 技能模式跟踪（3 次相同序列自动建议）
+        self._tool_seq: list[tuple] = []  # k-最近工具调用序列
+        self._auto_consolidate: bool = True  # Phase 3: 自动巩固记忆
 
     # === Hermes 对齐：3 种入口 ===
 
@@ -83,6 +86,11 @@ class Agent:
                 if auto_remember and self.vector_memory and final_answer:
                     try:
                         self.vector_memory.remember(f"conv_{abs(hash(user_input)):08x}", f"Q: {user_input}\nA: {final_answer[:300]}")
+                    except Exception: pass
+                # Phase 3: 复杂任务自动巩固记忆
+                if self._auto_consolidate and self.stats["tool_calls"] >= 3 and self.vector_memory:
+                    try:
+                        self.vector_memory.remember(f"task_{abs(hash(user_input)):08x}", f"任务: {user_input}\n工具调用: {self.stats['tool_calls']}次\n结果: {final_answer[:200]}")
                     except Exception: pass
                 result = AgentResult(final_response=final_answer, messages=self.memory.to_messages(), stats=self.stats, stop_reason=stop_reason)
                 self.callbacks["on_complete"]({"result": result})
@@ -159,6 +167,7 @@ class Agent:
     def reset_memory(self):
         self.memory.reset()
         self._recent_tool_calls = []
+        self._tool_seq = []
         self.stats = {"tool_calls": 0, "steps": 0, "total_tokens": 0}
 
     def compress_history(self) -> str:

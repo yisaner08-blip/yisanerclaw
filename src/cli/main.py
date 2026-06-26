@@ -15,6 +15,7 @@ from src.core.session import search_sessions  # FTS5 全文搜索
 from src.core.skill import list_skills, save_skill, load_skill  # 技能系统
 from src.core.skill import learn_skill  # /learn 命令
 from src.core import cron  # Cron 定时任务
+from src.core.mcp_client import connect_mcp, list_mcp  # MCP
 
 # 导入工具模块触发自注册（Hermes 风格：不直接使用，仅触发 registry.register）
 import src.tools.calculator  # noqa: F401
@@ -278,6 +279,69 @@ def main():
                 sub.reset_memory()
                 result = sub.run(task)
                 console.print(Panel(Markdown(result), title="[bold magenta]子代理[/bold magenta]", border_style="magenta"))
+            continue
+
+        # Phase 5: /batch 命令 — 顺序处理多个任务
+        if cmd.startswith("/batch "):
+            tasks = [t.strip() for t in cmd[len("/batch "):].strip().split("|") if t.strip()]
+            if not tasks:
+                console.print("[yellow]用法: /batch <任务1> | <任务2> | ...[/yellow]")
+                continue
+            table = Table(title="批量执行", border_style="cyan")
+            table.add_column("#", style="dim")
+            table.add_column("任务")
+            table.add_column("结果")
+            for i, t in enumerate(tasks, 1):
+                agent.reset_memory()
+                with console.status(f"[cyan]Batch {i}/{len(tasks)}...[/cyan]"):
+                    r = agent.chat(t)
+                table.add_row(str(i), t[:30], r[:60])
+            console.print(table)
+            continue
+
+        # Phase 6: /export 命令 — 导出会话 JSONL
+        if cmd.startswith("/export"):
+            sid = cmd[len("/export "):].strip() if len(cmd) > len("/export") else "last"
+            from src.core.session import load_session
+            import json, os
+            if sid == "last":
+                sessions = list_sessions()
+                sid = sessions[0]["id"] if sessions else None
+            if not sid:
+                console.print("[yellow]没有可导出会话[/yellow]")
+                continue
+            session = load_session(sid)
+            if session:
+                path = f"data/exports/session_{sid}.jsonl"
+                os.makedirs("data/exports", exist_ok=True)
+                with open(path, "w", encoding="utf-8") as f:
+                    for m in session["messages"]:
+                        f.write(json.dumps(m, ensure_ascii=False) + "\n")
+                console.print(f"[green]已导出到 {path} ({len(session['messages'])} 条消息)[/green]")
+            else:
+                console.print("[yellow]会话不存在[/yellow]")
+            continue
+
+        # Phase 8: /mcp 命令 — MCP 服务器管理
+        if cmd.startswith("/mcp "):
+            parts = cmd[len("/mcp "):].strip().split(maxsplit=2)
+            action = parts[0] if parts else ""
+            if action == "connect" and len(parts) >= 3:
+                ok = connect_mcp(parts[1], parts[2])
+                console.print(f"[green]已连接 {parts[1]}[/green]" if ok else f"[red]连接失败[/red]")
+            elif action == "list":
+                servers = list_mcp()
+                if servers:
+                    table = Table(title="MCP 服务器", border_style="cyan")
+                    table.add_column("名称")
+                    table.add_column("工具数")
+                    for s in servers:
+                        table.add_row(s["name"], str(s["tools"]))
+                    console.print(table)
+                else:
+                    console.print("[yellow]无已连接 MCP 服务器[/yellow]")
+            else:
+                console.print("[yellow]用法: /mcp connect <name> <command> | list[/yellow]")
             continue
 
         # /consolidate 命令：总结当前对话并存入长期记忆
